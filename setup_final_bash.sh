@@ -485,7 +485,7 @@ generate_xray_config_vm() {
     echo "Создаем конфигурацию Xray для локального VPN-туннеля...";
     mkdir -p /usr/local/etc/xray
     cat <<EOF > /usr/local/etc/xray/config.json
-{"log":{"loglevel":"warning"},"inbounds":[{"listen":"127.0.0.1","port":12345,"protocol":"dokodemo-door","settings":{"network":"tcp,udp","followRedirect":true},"sniffing":{"enabled":true,"destOverride":["http","tls"]},"tag":"tproxy-in"},{"listen":"127.0.0.1","port":5353,"protocol":"dokodemo-door","settings":{"address":"1.1.1.1","network":"tcp,udp","port":53},"tag":"dns-in"}],"outbounds":[{"protocol":"vless","tag":"vless-reality","settings":{"vnext":[{"address":"$VLESS_HOST","port":$VLESS_PORT,"users":[{"id":"$VLESS_ID","flow":"$VLESS_FLOW","encryption":"none"}]}]},"streamSettings":{"network":"tcp","security":"reality","realitySettings":{"fingerprint":"$VLESS_FP","serverName":"$VLESS_SNI","publicKey":"$VLESS_PBK","shortId":"$VLESS_SID","spiderX":"$VLESS_SPX"}}},{"protocol":"freedom","tag":"direct"},{"protocol":"blackhole","tag":"block"},{"protocol":"dns","tag":"dns-out"}],"routing":{"rules":[{"type":"field","inboundTag":["dns-in"],"outboundTag":"dns-out"},{"inboundTag":["tproxy-in"],"outboundTag":"block","type":"field","network":"udp","port":"135, 137, 138, 139"},{"inboundTag":["tproxy-in"],"outboundTag":"block","type":"field","domain":["appcenter.ms"]},{"inboundTag":["tproxy-in"],"outboundTag":"direct","type":"field","network":"udp","port":"4004","ip":["94.79.52.202"]},{"inboundTag":["tproxy-in"],"outboundTag":"direct","type":"field","domain":["vpn.iac.mchs.ru","regexp:^([a-zA-Z0-9_.-]+\\\\.)ru$","regexp:^([a-zA-Z0-9_.-]+\\\\.)su$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--p1ai$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--p1acf$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--80asehdb$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--c1avg$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--80aswg$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--80adxhks$","regexp:^([a-zA-Z0-9_.-]+\\\\.)moscow$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--d1acj3b$"]},{"inboundTag":["tproxy-in"],"outboundTag":"direct","type":"field","protocol":["bittorrent"]},{"inboundTag":["tproxy-in"],"outboundTag":"vless-reality","type":"field"}]},"dns":{"servers":["1.1.1.1","8.8.8.8"]}}
+{"log":{"loglevel":"warning"},"inbounds":[{"listen":"127.0.0.1","port":12345,"protocol":"dokodemo-door","settings":{"network":"tcp,udp","followRedirect":true},"sniffing":{"enabled":true,"destOverride":["http","tls","quic","fakedns"]},"tag":"tproxy-in"}],"outbounds":[{"protocol":"vless","tag":"vless-reality","settings":{"vnext":[{"address":"$VLESS_HOST","port":$VLESS_PORT,"users":[{"id":"$VLESS_ID","flow":"$VLESS_FLOW","encryption":"none"}]}]},"streamSettings":{"network":"tcp","security":"reality","realitySettings":{"fingerprint":"$VLESS_FP","serverName":"$VLESS_SNI","publicKey":"$VLESS_PBK","shortId":"$VLESS_SID","spiderX":"$VLESS_SPX"}}},{"protocol":"freedom","tag":"direct"},{"protocol":"blackhole","tag":"block"}],"routing":{"domainStrategy":"IPIfNonMatch","rules":[{"inboundTag":["tproxy-in"],"outboundTag":"block","type":"field","network":"udp","port":"135, 137, 138, 139"},{"inboundTag":["tproxy-in"],"outboundTag":"block","type":"field","domain":["appcenter.ms"]},{"inboundTag":["tproxy-in"],"outboundTag":"direct","type":"field","network":"udp","port":"4004","ip":["94.79.52.202"]},{"inboundTag":["tproxy-in"],"outboundTag":"direct","type":"field","domain":["vpn.iac.mchs.ru","regexp:^([a-zA-Z0-9_.-]+\\\\.)ru$","regexp:^([a-zA-Z0-9_.-]+\\\\.)su$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--p1ai$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--p1acf$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--80asehdb$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--c1avg$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--80aswg$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--80adxhks$","regexp:^([a-zA-Z0-9_.-]+\\\\.)moscow$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--d1acj3b$"]},{"inboundTag":["tproxy-in"],"outboundTag":"direct","type":"field","protocol":["bittorrent"]},{"inboundTag":["tproxy-in"],"outboundTag":"vless-reality","type":"field"}]},"dns":{"servers":["1.1.1.1","8.8.8.8"],"queryStrategy":"UseIPv4"}}
 
 EOF
     echo -e "${GREEN}Конфигурация Xray для VM создана.${NC}"
@@ -566,9 +566,10 @@ setup_firewall_vm() {
     iptables -t nat -A XRAY -d 224.0.0.0/4 -j RETURN
     iptables -t nat -A XRAY -d 240.0.0.0/4 -j RETURN
 
-    # Перенаправляем TCP трафик в Xray
-    echo "Перенаправляем TCP трафик в Xray..."
+    # Перенаправляем TCP и UDP трафик в Xray
+    echo "Перенаправляем TCP и UDP трафик в Xray..."
     iptables -t nat -A XRAY -p tcp -j REDIRECT --to-ports 12345
+    iptables -t nat -A XRAY -p udp -j REDIRECT --to-ports 12345
 
     # Применяем цепочку XRAY к исходящему трафику, исключая трафик от пользователя xray
     echo "Применяем правила к исходящему трафику..."
@@ -579,13 +580,9 @@ setup_firewall_vm() {
         iptables -t nat -A OUTPUT -m owner --uid-owner xray -j RETURN
     fi
 
-    # Применяем правила XRAY к остальному трафику
+    # Применяем правила XRAY к остальному трафику (TCP и UDP)
     iptables -t nat -A OUTPUT -p tcp -j XRAY
-
-    # Перенаправляем DNS запросы в Xray DNS (порт 5353)
-    echo "Перенаправляем DNS запросы в Xray..."
-    iptables -t nat -A OUTPUT -p udp --dport 53 -j REDIRECT --to-ports 5353
-    iptables -t nat -A OUTPUT -p tcp --dport 53 -j REDIRECT --to-ports 5353
+    iptables -t nat -A OUTPUT -p udp -j XRAY
 
     echo "Сохраняем правила брандмауэра..."
     netfilter-persistent save
