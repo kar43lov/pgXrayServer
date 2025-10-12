@@ -44,7 +44,8 @@ show_menu() {
         echo -e "  ${GREEN}6)${NC} Настройка SSH"
         echo -e "  $ ======================================================================== "
         echo -e "  ${GREEN}7)${NC} Упрощенная установка для VM (только VPN-туннель, без роутера)"
-        echo -e "  ${GREEN}8)${NC} Выход из программы"
+        echo -e "  ${GREEN}8)${NC} Просмотр логов и диагностика Xray"
+        echo -e "  ${GREEN}9)${NC} Выход из программы"
         echo ""
         echo -e "${YELLOW}По умолчанию будет выполнен пункт 1 (если просто нажать Enter)${NC}"
         echo ""
@@ -85,11 +86,15 @@ show_menu() {
                 return 7
                 ;;
             8)
-                echo -e "${GREEN}Выход из программы${NC}"
+                echo -e "${GREEN}Выбран режим: Просмотр логов и диагностика${NC}"
                 return 8
                 ;;
+            9)
+                echo -e "${GREEN}Выход из программы${NC}"
+                return 9
+                ;;
             *)
-                echo -e "${RED}Неверный выбор. Пожалуйста, выберите число от 1 до 8${NC}"
+                echo -e "${RED}Неверный выбор. Пожалуйста, выберите число от 1 до 9${NC}"
                 echo ""
                 ;;
         esac
@@ -1081,6 +1086,79 @@ setup_ssh() {
     return 0
 }
 
+show_xray_logs() {
+    print_header "Режим: Просмотр логов и диагностика Xray"
+    echo -e "${YELLOW}Выполняем диагностику службы Xray...${NC}"
+    echo ""
+
+    # 1. Проверка статуса службы
+    print_header "1. Статус службы Xray"
+    systemctl status xray --no-pager -l
+    echo ""
+    echo -e "${YELLOW}Нажмите Enter для продолжения...${NC}"
+    read -r
+
+    # 2. Проверка конфигурации
+    print_header "2. Проверка конфигурации Xray"
+    if [[ -f /usr/local/bin/xray ]]; then
+        /usr/local/bin/xray -test -config /usr/local/etc/xray/config.json
+    else
+        echo -e "${RED}Xray не установлен (файл /usr/local/bin/xray не найден)${NC}"
+    fi
+    echo ""
+    echo -e "${YELLOW}Нажмите Enter для продолжения...${NC}"
+    read -r
+
+    # 3. Последние 50 строк логов
+    print_header "3. Последние 50 строк логов Xray"
+    journalctl -u xray -n 50 --no-pager
+    echo ""
+    echo -e "${YELLOW}Нажмите Enter для продолжения...${NC}"
+    read -r
+
+    # 4. Проверка iptables правил
+    print_header "4. Правила iptables NAT"
+    echo -e "${YELLOW}OUTPUT chain (для VM режима):${NC}"
+    iptables -t nat -L OUTPUT -n -v --line-numbers
+    echo ""
+    echo -e "${YELLOW}PREROUTING chain (для Router режима):${NC}"
+    iptables -t nat -L PREROUTING -n -v --line-numbers
+    echo ""
+    echo -e "${YELLOW}Нажмите Enter для продолжения...${NC}"
+    read -r
+
+    # 5. Проверка сетевых подключений
+    print_header "5. Активные подключения Xray"
+    echo -e "${YELLOW}Порты, которые слушает Xray:${NC}"
+    ss -tulpn | grep xray || echo "Нет активных портов"
+    echo ""
+    echo -e "${YELLOW}Активные соединения:${NC}"
+    ss -tnp | grep xray | head -20 || echo "Нет активных соединений"
+    echo ""
+
+    # 6. Дополнительная информация
+    print_header "6. Дополнительная информация"
+    echo -e "${YELLOW}Версия Xray:${NC}"
+    /usr/local/bin/xray version 2>/dev/null || echo "Не удалось получить версию"
+    echo ""
+    echo -e "${YELLOW}Конфигурационный файл:${NC}"
+    echo "/usr/local/etc/xray/config.json"
+    echo ""
+    echo -e "${YELLOW}Размер конфигурации:${NC}"
+    ls -lh /usr/local/etc/xray/config.json 2>/dev/null || echo "Файл не найден"
+    echo ""
+
+    print_header "Диагностика завершена!"
+    echo -e "${GREEN}Вся информация о состоянии Xray отображена выше.${NC}"
+    echo ""
+    echo -e "${YELLOW}Для просмотра логов в реальном времени используйте:${NC}"
+    echo "  journalctl -u xray -f"
+    echo ""
+    echo -e "${YELLOW}Нажмите любую клавишу для возврата к меню...${NC}"
+    read -n 1 -s
+    return 0
+}
+
 # --- Основной поток выполнения ---
 check_root
 
@@ -1136,6 +1214,11 @@ while true; do
             # Возвращаемся к меню после выполнения
             ;;
         8)
+            # Режим: Просмотр логов и диагностика
+            show_xray_logs
+            # Возвращаемся к меню после выполнения
+            ;;
+        9)
             # Выход из программы
             echo -e "${YELLOW}Спасибо за использование скрипта! До свидания!${NC}"
             break
