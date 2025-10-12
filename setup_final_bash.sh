@@ -42,7 +42,9 @@ show_menu() {
         echo -e "  ${GREEN}4)${NC} Отключение визуальной оболочки Ubuntu"
         echo -e "  ${GREEN}5)${NC} Включение визуальной оболочки Ubuntu"
         echo -e "  ${GREEN}6)${NC} Настройка SSH"
-        echo -e "  ${GREEN}7)${NC} Выход из программы"
+        echo -e "  $ ======================================================================== "
+        echo -e "  ${GREEN}7)${NC} Упрощенная установка для VM (только VPN-туннель, без роутера)"
+        echo -e "  ${GREEN}8)${NC} Выход из программы"
         echo ""
         echo -e "${YELLOW}По умолчанию будет выполнен пункт 1 (если просто нажать Enter)${NC}"
         echo ""
@@ -79,11 +81,15 @@ show_menu() {
                 return 6
                 ;;
             7)
-                echo -e "${GREEN}Выход из программы${NC}"
+                echo -e "${GREEN}Выбран режим: Упрощенная установка для VM${NC}"
                 return 7
                 ;;
+            8)
+                echo -e "${GREEN}Выход из программы${NC}"
+                return 8
+                ;;
             *)
-                echo -e "${RED}Неверный выбор. Пожалуйста, выберите число от 1 до 7${NC}"
+                echo -e "${RED}Неверный выбор. Пожалуйста, выберите число от 1 до 8${NC}"
                 echo ""
                 ;;
         esac
@@ -277,6 +283,16 @@ install_dependencies() {
     apt-get install -y curl unzip isc-dhcp-server iptables-persistent net-tools >/dev/null
 }
 
+install_dependencies_minimal() {
+    print_header "Установка минимальных зависимостей для VM"
+    echo -e "${YELLOW}Устанавливаем только необходимые пакеты для работы VPN-туннеля...${NC}"
+    apt-get update >/dev/null
+    echo iptables-persistent iptables-persistent/autosave_v4 boolean true | debconf-set-selections
+    echo iptables-persistent iptables-persistent/autosave_v6 boolean true | debconf-set-selections
+    apt-get install -y curl unzip iptables-persistent >/dev/null
+    echo -e "${GREEN}Минимальные зависимости установлены.${NC}"
+}
+
 configure_network_interactive() {
     print_header "Этап 3: Интерактивная настройка сети"
     echo -e "${YELLOW}Сейчас вы выберете, какой сетевой интерфейс будет использоваться для интернета (WAN), а какой — для локальной сети (LAN).\nЕсли не знаете, какой выбрать — ориентируйтесь по выводу 'ip a' и физическим портам на сервере.${NC}"
@@ -392,7 +408,7 @@ configure_system_core() {
 
 generate_xray_config() {
     echo "Обновляем конфигурацию Xray из файла VLESS-ссылки...";
-    
+
     # --- Чтение VLESS-ссылки и парсинг ---
     VLESS_URL=$(grep -v '^#' "$VLESS_LINK_FILE" | grep -v '^$' | head -n1 | tr -d '\r\n')
     if [[ ! "$VLESS_URL" =~ ^vless:// ]]; then
@@ -428,6 +444,45 @@ generate_xray_config() {
 {"log":{"loglevel":"warning"},"inbounds":[{"listen":"0.0.0.0","port":12345,"protocol":"dokodemo-door","settings":{"network":"tcp,udp","followRedirect":true},"sniffing":{"enabled":true,"destOverride":["http","tls"]},"tag":"tproxy-in"},{"listen":"0.0.0.0","port":53,"protocol":"dokodemo-door","settings":{"address":"1.1.1.1","network":"tcp,udp","port":53},"tag":"dns-in"}],"outbounds":[{"protocol":"vless","tag":"vless-reality","settings":{"vnext":[{"address":"$VLESS_HOST","port":$VLESS_PORT,"users":[{"id":"$VLESS_ID","flow":"$VLESS_FLOW","encryption":"none"}]}]},"streamSettings":{"network":"tcp","security":"reality","realitySettings":{"fingerprint":"$VLESS_FP","serverName":"$VLESS_SNI","publicKey":"$VLESS_PBK","shortId":"$VLESS_SID","spiderX":"$VLESS_SPX"}}},{"protocol":"freedom","tag":"direct"},{"protocol":"blackhole","tag":"block"},{"protocol":"dns","tag":"dns-out"}],"routing":{"rules":[{"type":"field","inboundTag":["dns-in"],"outboundTag":"direct"},{"inboundTag":["tproxy-in"],"outboundTag":"block","type":"field","network":"udp","port":"135, 137, 138, 139"},{"inboundTag":["tproxy-in"],"outboundTag":"block","type":"field","domain":["appcenter.ms"]},{"inboundTag":["tproxy-in"],"outboundTag":"direct","type":"field","network":"udp","port":"4004","ip":["94.79.52.202"]},{"inboundTag":["tproxy-in"],"outboundTag":"direct","type":"field","domain":["vpn.iac.mchs.ru","regexp:^([a-zA-Z0-9_.-]+\\\\.)ru$","regexp:^([a-zA-Z0-9_.-]+\\\\.)su$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--p1ai$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--p1acf$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--80asehdb$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--c1avg$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--80aswg$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--80adxhks$","regexp:^([a-zA-Z0-9_.-]+\\\\.)moscow$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--d1acj3b$","geosite:category-gov-ru","geosite:private","geosite:yandex","geosite:steam","geosite:vk"]},{"inboundTag":["tproxy-in"],"outboundTag":"direct","type":"field","protocol":["bittorrent"]},{"inboundTag":["tproxy-in"],"outboundTag":"vless-reality","type":"field"}]},"dns":{"servers":["https://1.1.1.1/dns-query","8.8.8.8"]}}
 
 EOF
+}
+
+generate_xray_config_vm() {
+    echo "Создаем конфигурацию Xray для VM...";
+
+    # --- Чтение VLESS-ссылки и парсинг ---
+    VLESS_URL=$(grep -v '^#' "$VLESS_LINK_FILE" | grep -v '^$' | head -n1 | tr -d '\r\n')
+    if [[ ! "$VLESS_URL" =~ ^vless:// ]]; then
+        echo -e "${RED}VLESS-ссылка в файле некорректна.${NC}"
+        exit 1
+    fi
+
+    # --- Парсим ссылку ---
+    VLESS_ID=$(echo "$VLESS_URL" | sed -n 's#vless://\([^@]*\)@.*#\1#p')
+    VLESS_HOST=$(echo "$VLESS_URL" | sed -n 's#vless://[^@]*@\([^:]*\):.*#\1#p')
+    VLESS_PORT=$(echo "$VLESS_URL" | sed -n 's#vless://[^@]*@[^:]*:\([0-9]*\).*#\1#p')
+    VLESS_PBK=$(echo "$VLESS_URL" | grep -oP 'pbk=\K[^&]*')
+    VLESS_FP=$(echo "$VLESS_URL" | grep -oP 'fp=\K[^&]*')
+    VLESS_SNI=$(echo "$VLESS_URL" | grep -oP 'sni=\K[^&]*')
+    VLESS_SID=$(echo "$VLESS_URL" | grep -oP 'sid=\K[^&]*')
+    VLESS_SPX_RAW=$(echo "$VLESS_URL" | grep -oP 'spx=\K[^&]*')
+    VLESS_FLOW=$(echo "$VLESS_URL" | grep -oP 'flow=\K[^&#]*')
+
+    # --- Декодирование URL для spx ---
+    VLESS_SPX=$(printf '%b' "$(echo $VLESS_SPX_RAW | sed 's/+/ /g;s/%/\\x/g')")
+
+    # Проверка обязательных параметров
+    if [[ -z "$VLESS_ID" || -z "$VLESS_HOST" || -z "$VLESS_PORT" || -z "$VLESS_PBK" ]]; then
+        echo -e "${RED}Не удалось корректно распарсить VLESS-ссылку. Проверьте формат.${NC}"
+        exit 1
+    fi
+
+    # --- Генерируем config.json для VM (localhost только) ---
+    echo "Создаем конфигурацию Xray для локального VPN-туннеля...";
+    cat <<EOF > /usr/local/etc/xray/config.json
+{"log":{"loglevel":"warning"},"inbounds":[{"listen":"127.0.0.1","port":12345,"protocol":"dokodemo-door","settings":{"network":"tcp,udp","followRedirect":true},"sniffing":{"enabled":true,"destOverride":["http","tls"]},"tag":"tproxy-in"},{"listen":"127.0.0.1","port":53,"protocol":"dokodemo-door","settings":{"address":"1.1.1.1","network":"tcp,udp","port":53},"tag":"dns-in"}],"outbounds":[{"protocol":"vless","tag":"vless-reality","settings":{"vnext":[{"address":"$VLESS_HOST","port":$VLESS_PORT,"users":[{"id":"$VLESS_ID","flow":"$VLESS_FLOW","encryption":"none"}]}]},"streamSettings":{"network":"tcp","security":"reality","realitySettings":{"fingerprint":"$VLESS_FP","serverName":"$VLESS_SNI","publicKey":"$VLESS_PBK","shortId":"$VLESS_SID","spiderX":"$VLESS_SPX"}}},{"protocol":"freedom","tag":"direct"},{"protocol":"blackhole","tag":"block"},{"protocol":"dns","tag":"dns-out"}],"routing":{"rules":[{"type":"field","inboundTag":["dns-in"],"outboundTag":"direct"},{"inboundTag":["tproxy-in"],"outboundTag":"block","type":"field","network":"udp","port":"135, 137, 138, 139"},{"inboundTag":["tproxy-in"],"outboundTag":"block","type":"field","domain":["appcenter.ms"]},{"inboundTag":["tproxy-in"],"outboundTag":"direct","type":"field","network":"udp","port":"4004","ip":["94.79.52.202"]},{"inboundTag":["tproxy-in"],"outboundTag":"direct","type":"field","domain":["vpn.iac.mchs.ru","regexp:^([a-zA-Z0-9_.-]+\\\\.)ru$","regexp:^([a-zA-Z0-9_.-]+\\\\.)su$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--p1ai$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--p1acf$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--80asehdb$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--c1avg$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--80aswg$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--80adxhks$","regexp:^([a-zA-Z0-9_.-]+\\\\.)moscow$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--d1acj3b$","geosite:category-gov-ru","geosite:private","geosite:yandex","geosite:steam","geosite:vk"]},{"inboundTag":["tproxy-in"],"outboundTag":"direct","type":"field","protocol":["bittorrent"]},{"inboundTag":["tproxy-in"],"outboundTag":"vless-reality","type":"field"}]},"dns":{"servers":["https://1.1.1.1/dns-query","8.8.8.8"]}}
+
+EOF
+    echo -e "${GREEN}Конфигурация Xray для VM создана.${NC}"
 }
 
 setup_xray() {
@@ -483,6 +538,55 @@ setup_firewall() {
     netfilter-persistent save
 }
 
+setup_firewall_vm() {
+    print_header "Настройка брандмауэра для VM"
+    echo -e "${YELLOW}Настраиваем перенаправление исходящего трафика VM через Xray VPN...${NC}"
+
+    # Очищаем существующие правила NAT
+    echo "Очищаем старые правила NAT..."
+    iptables -t nat -F
+
+    # Создаем новую цепочку для Xray
+    iptables -t nat -N XRAY 2>/dev/null || iptables -t nat -F XRAY
+
+    # Исключаем локальные адреса
+    echo "Настраиваем исключения для локальных адресов..."
+    iptables -t nat -A XRAY -d 0.0.0.0/8 -j RETURN
+    iptables -t nat -A XRAY -d 10.0.0.0/8 -j RETURN
+    iptables -t nat -A XRAY -d 127.0.0.0/8 -j RETURN
+    iptables -t nat -A XRAY -d 169.254.0.0/16 -j RETURN
+    iptables -t nat -A XRAY -d 172.16.0.0/12 -j RETURN
+    iptables -t nat -A XRAY -d 192.168.0.0/16 -j RETURN
+    iptables -t nat -A XRAY -d 224.0.0.0/4 -j RETURN
+    iptables -t nat -A XRAY -d 240.0.0.0/4 -j RETURN
+
+    # Перенаправляем TCP трафик в Xray
+    echo "Перенаправляем TCP трафик в Xray..."
+    iptables -t nat -A XRAY -p tcp -j REDIRECT --to-ports 12345
+
+    # Применяем цепочку XRAY к исходящему трафику, исключая трафик от пользователя xray
+    echo "Применяем правила к исходящему трафику..."
+
+    # Проверяем существует ли пользователь xray
+    if id "xray" &>/dev/null; then
+        # Исключаем трафик процесса Xray (чтобы избежать петли)
+        iptables -t nat -A OUTPUT -m owner --uid-owner xray -j RETURN
+    fi
+
+    # Применяем правила XRAY к остальному трафику
+    iptables -t nat -A OUTPUT -p tcp -j XRAY
+
+    # Перенаправляем DNS запросы в Xray DNS
+    echo "Перенаправляем DNS запросы в Xray..."
+    iptables -t nat -A OUTPUT -p udp --dport 53 -j REDIRECT --to-ports 53
+    iptables -t nat -A OUTPUT -p tcp --dport 53 -j REDIRECT --to-ports 53
+
+    echo "Сохраняем правила брандмауэра..."
+    netfilter-persistent save
+
+    echo -e "${GREEN}Брандмауэр для VM настроен.${NC}"
+}
+
 finalize() {
     print_header "Этап 8: Перезапуск и включение сервисов"
     echo -e "${YELLOW}Финальный этап! Все сервисы будут перезапущены и включены в автозагрузку.\nЧерез несколько секунд ваш сервер будет готов к работе как VPN-роутер.${NC}"
@@ -529,6 +633,89 @@ EOF
     echo "4. Интернет на самом сервере будет работать напрямую (YouTube и др. сайты будут открываться без VPN)."
     echo ""
     echo -e "${GREEN}Все готово. Спасибо за ваше терпение!${NC}"
+    echo ""
+    echo -e "${YELLOW}Нажмите любую клавишу для возврата к меню...${NC}"
+    read -n 1 -s
+}
+
+simple_vm_install() {
+    print_header "Режим: Упрощенная установка для VM"
+    echo -e "${YELLOW}Этот режим установит только Xray VPN без настройки роутера.${NC}"
+    echo -e "${YELLOW}Предназначен для виртуальных машин, где уже есть интернет.${NC}"
+    echo -e "${YELLOW}Весь исходящий трафик VM будет автоматически проходить через VPN.${NC}"
+    echo ""
+
+    # Этап 1: Проверка VLESS-ссылки
+    check_vless_link
+
+    # Этап 2: Спросить про очистку
+    echo ""
+    echo -e "${YELLOW}Хотите выполнить очистку предыдущих установок перед началом?${NC}"
+    read -p "Выполнить очистку? (y/N): " -n 1 -r
+    echo ""
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        cleanup_previous_install
+    else
+        echo "Пропускаем очистку."
+    fi
+
+    # Этап 3: Установка минимальных зависимостей
+    install_dependencies_minimal
+
+    # Этап 4: Установка Xray
+    print_header "Установка Xray"
+    echo -e "${YELLOW}Устанавливаем Xray VPN прокси...${NC}"
+    echo "Устанавливаем Xray...";
+    bash -c "$(curl -L https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh)" @ install > /dev/null 2>&1
+    echo "Скачиваем дополнительные файлы правил...";
+    curl -L -o /usr/local/share/xray/geosite.dat https://github.com/SukkaW/v2ray-rules-dat/raw/master/geosite.dat 2>/dev/null
+    echo -e "${GREEN}Xray установлен.${NC}"
+
+    # Этап 5: Генерация конфигурации для VM
+    generate_xray_config_vm
+
+    # Этап 6: Настройка файрвола для VM
+    setup_firewall_vm
+
+    # Этап 7: Запуск и включение Xray
+    print_header "Запуск сервисов"
+    echo "Запускаем и включаем Xray в автозагрузку..."
+    systemctl restart xray >/dev/null 2>&1
+    systemctl enable xray >/dev/null 2>&1
+
+    # Этап 8: Проверка и финализация
+    sleep 3
+    if systemctl is-active --quiet xray; then
+        print_header "Упрощенная установка завершена!"
+        echo -e "${GREEN}Xray VPN успешно установлен и настроен для VM.${NC}"
+        echo ""
+        echo -e "${YELLOW}Что было настроено:${NC}"
+        echo "  - Установлен Xray VPN прокси"
+        echo "  - Настроена конфигурация VLESS Reality"
+        echo "  - Весь исходящий TCP трафик перенаправлен через VPN"
+        echo "  - DNS запросы перенаправлены через VPN"
+        echo ""
+        echo -e "${YELLOW}Как работает маршрутизация:${NC}"
+        echo "  - Российские домены (.ru, .su, .рф) → напрямую"
+        echo "  - VK, Yandex, Steam → напрямую"
+        echo "  - BitTorrent → напрямую"
+        echo "  - Остальной трафик → через VPN"
+        echo ""
+        echo -e "${YELLOW}Для проверки работы:${NC}"
+        echo "  - Проверить статус: systemctl status xray"
+        echo "  - Посмотреть логи: journalctl -u xray -f"
+        echo "  - Проверить IP: curl ifconfig.me"
+        echo ""
+        echo -e "${GREEN}VPN-туннель активен и работает!${NC}"
+    else
+        echo -e "${RED}Ошибка: Не удалось запустить Xray. Проверьте логи: journalctl -u xray${NC}"
+        echo ""
+        echo -e "${YELLOW}Возможные причины:${NC}"
+        echo "  - Неверная VLESS-ссылка"
+        echo "  - Проблемы с сетевым подключением"
+        echo "  - Ошибки в конфигурации"
+    fi
+
     echo ""
     echo -e "${YELLOW}Нажмите любую клавишу для возврата к меню...${NC}"
     read -n 1 -s
@@ -944,6 +1131,11 @@ while true; do
             # Всегда возвращаемся к меню после выполнения
             ;;
         7)
+            # Режим: Упрощенная установка для VM
+            simple_vm_install
+            # Возвращаемся к меню после выполнения
+            ;;
+        8)
             # Выход из программы
             echo -e "${YELLOW}Спасибо за использование скрипта! До свидания!${NC}"
             break
