@@ -96,12 +96,21 @@ ssh-keygen -t rsa -b 4096 -C "your_email@example.com"
 #### Добавление ключа в SSH-агент
 
 ```bash
-# Запускаем SSH-агент
+# Запускаем SSH-агент и добавляем ключ (все в одной команде)
+eval "$(ssh-agent -s)" && ssh-add ~/.ssh/id_ed25519
+```
+
+**Если возникает ошибка "Could not open a connection to your authentication agent":**
+
+```bash
+# Сначала запустите агент
 eval "$(ssh-agent -s)"
 
-# Добавляем приватный ключ в агент
+# Затем добавьте ключ
 ssh-add ~/.ssh/id_ed25519
 ```
+
+> **Примечание:** SSH-агент нужен только для удобства. Git будет работать и без него, используя ключ напрямую из `~/.ssh/`.
 
 #### Копирование публичного ключа
 
@@ -114,21 +123,33 @@ cat ~/.ssh/id_ed25519.pub
 
 #### Добавление ключа в GitHub
 
-1. Откройте GitHub → **Settings** → **SSH and GPG keys**
-2. Нажмите **New SSH key**
-3. Введите название (например, "Ubuntu Server")
-4. Вставьте скопированный публичный ключ
-5. Нажмите **Add SSH key**
+1. Откройте в браузере: https://github.com/settings/keys
+2. Нажмите зеленую кнопку **"New SSH key"** (справа вверху)
+3. Заполните форму:
+   - **Title:** `Ubuntu Server` (или любое понятное название)
+   - **Key type:** `Authentication Key` (оставьте по умолчанию)
+   - **Key:** вставьте скопированный публичный ключ (всю строку!)
+4. Нажмите **"Add SSH key"**
+5. Подтвердите действие паролем GitHub (если попросит)
+
+> ⚠️ **Важно:** Убедитесь, что скопировали **весь** ключ, включая `ssh-ed25519` в начале и email в конце!
 
 #### Проверка подключения
 
 ```bash
 # Проверяем соединение с GitHub
 ssh -T git@github.com
-
-# Должны увидеть сообщение:
-# Hi username! You've successfully authenticated, but GitHub does not provide shell access.
 ```
+
+**Ожидаемый результат (успех):**
+```
+Hi username! You've successfully authenticated, but GitHub does not provide shell access.
+```
+
+**Если видите ошибку "Permission denied (publickey)":**
+- Ключ не добавлен в GitHub → вернитесь к предыдущему шагу
+- Проверьте, что скопировали весь ключ: `cat ~/.ssh/id_ed25519.pub`
+- Убедитесь, что используете правильный аккаунт GitHub
 
 ### 2. Клонирование репозитория
 
@@ -340,6 +361,19 @@ sudo bash setup_final_bash.sh
 
 ### GitHub SSH проблемы
 
+#### Ошибка "Could not open a connection to your authentication agent"
+
+```bash
+# Решение: запустите SSH-агент
+eval "$(ssh-agent -s)"
+ssh-add ~/.ssh/id_ed25519
+
+# Или работайте без агента (ключ используется автоматически)
+ssh -T git@github.com
+```
+
+#### Другие SSH проблемы
+
 ```bash
 # Проверить SSH ключи
 ls -la ~/.ssh/
@@ -347,12 +381,50 @@ ls -la ~/.ssh/
 # Проверить SSH агент
 ssh-add -l
 
-# Проверить разрешения
+# Проверить разрешения (должны быть строгие)
 chmod 700 ~/.ssh
 chmod 600 ~/.ssh/id_ed25519
 chmod 644 ~/.ssh/id_ed25519.pub
 
 # Тестировать подключение с отладкой
+ssh -vT git@github.com
+```
+
+#### Ошибка "Permission denied (publickey)"
+
+Эта ошибка означает, что GitHub не знает ваш SSH ключ.
+
+**Пошаговое решение:**
+
+```bash
+# 1. Проверьте, что ключ создан
+ls -la ~/.ssh/id_ed25519*
+
+# 2. Выведите публичный ключ
+cat ~/.ssh/id_ed25519.pub
+```
+
+**Скопируйте вывод** (всю строку от `ssh-ed25519` до email)
+
+**3. Добавьте ключ в GitHub:**
+- Откройте: https://github.com/settings/keys
+- Нажмите **"New SSH key"**
+- Вставьте скопированный ключ
+- Сохраните
+
+**4. Проверьте подключение:**
+```bash
+ssh -T git@github.com
+# Должны увидеть: Hi username! You've successfully authenticated...
+```
+
+**5. Если всё еще не работает:**
+```bash
+# Проверьте разрешения файлов
+chmod 600 ~/.ssh/id_ed25519
+chmod 644 ~/.ssh/id_ed25519.pub
+
+# Тест с отладкой
 ssh -vT git@github.com
 ```
 
