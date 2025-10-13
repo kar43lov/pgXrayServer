@@ -680,13 +680,37 @@ simple_vm_install() {
     # Этап 6: Настройка файрвола для VM
     setup_firewall_vm
 
-    # Этап 7: Запуск и включение Xray
+    # Этап 7: Настройка DNS
+    print_header "Настройка DNS"
+    echo "Настраиваем систему использовать DNS через VPN..."
+
+    # Отключаем systemd-resolved чтобы освободить порт 53
+    systemctl stop systemd-resolved >/dev/null 2>&1
+    systemctl disable systemd-resolved >/dev/null 2>&1
+
+    # Убираем атрибут immutable если он есть
+    chattr -i /etc/resolv.conf >/dev/null 2>&1
+
+    # Создаем собственный resolv.conf
+    rm -f /etc/resolv.conf
+    cat > /etc/resolv.conf <<EOF
+nameserver 1.1.1.1
+nameserver 8.8.8.8
+options edns0 trust-ad
+EOF
+
+    # Защищаем файл от изменений
+    chattr +i /etc/resolv.conf >/dev/null 2>&1
+
+    echo -e "${GREEN}DNS настроен на использование 1.1.1.1 и 8.8.8.8 через VPN${NC}"
+
+    # Этап 8: Запуск и включение Xray
     print_header "Запуск сервисов"
     echo "Запускаем и включаем Xray в автозагрузку..."
     systemctl restart xray >/dev/null 2>&1
     systemctl enable xray >/dev/null 2>&1
 
-    # Этап 8: Проверка и финализация
+    # Этап 9: Проверка и финализация
     sleep 3
     if systemctl is-active --quiet xray; then
         print_header "Упрощенная установка завершена!"
