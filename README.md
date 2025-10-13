@@ -212,7 +212,59 @@ sudo bash setup_final_bash.sh
 2. Укажите путь к файлу с VLESS-ссылкой или введите её вручную
 3. Решите, нужна ли очистка предыдущих установок
 4. Дождитесь завершения установки (2-3 минуты)
-5. VPN автоматически активируется!
+5. VPN автоматически активируется через SOCKS5 proxy!
+
+#### Использование SOCKS5 прокси для приложений
+
+После установки режима VM (пункт 7), Xray создает локальный SOCKS5 прокси на портах:
+- **SOCKS5:** `127.0.0.1:1080`
+- **HTTP:** `127.0.0.1:1081`
+
+**Вариант А: Глобальные переменные окружения (рекомендуется для Python)**
+
+Для автоматического использования VPN всеми приложениями добавьте переменные в `.bashrc`:
+
+```bash
+# Добавить в ~/.bashrc для постоянного использования
+echo 'export http_proxy=http://127.0.0.1:1081' >> ~/.bashrc
+echo 'export https_proxy=http://127.0.0.1:1081' >> ~/.bashrc
+echo 'export all_proxy=socks5://127.0.0.1:1080' >> ~/.bashrc
+
+# Применить изменения сейчас
+source ~/.bashrc
+
+# Проверить
+env | grep proxy
+
+# Теперь любое приложение автоматически использует VPN
+curl https://api.ipify.org      # покажет IP VPN-сервера
+python your_app.py              # работает через VPN без изменений кода
+```
+
+**Вариант Б: Для отдельных команд**
+
+Если нужно использовать VPN только для конкретных команд:
+
+```bash
+# Через SOCKS5
+curl --socks5 127.0.0.1:1080 https://api.ipify.org
+
+# Через HTTP proxy
+wget -e use_proxy=yes -e http_proxy=127.0.0.1:1081 https://example.com
+
+# Для Git
+git config --global http.proxy http://127.0.0.1:1081
+
+# Для Python приложения (одна команда)
+http_proxy=http://127.0.0.1:1081 https_proxy=http://127.0.0.1:1081 python your_app.py
+
+# Для всех команд в текущей сессии
+export http_proxy=http://127.0.0.1:1081
+export https_proxy=http://127.0.0.1:1081
+python your_app.py
+```
+
+> ✅ **Python-приложения** автоматически подхватывают переменные окружения `http_proxy`, `https_proxy` и `all_proxy` — изменять код не нужно!
 
 ### Обновление VLESS-ссылки
 
@@ -224,6 +276,8 @@ sudo bash setup_final_bash.sh
 ```
 
 ### Проверка работы
+
+**Для режима VPN-роутера:**
 
 ```bash
 # Проверить статус Xray
@@ -237,6 +291,27 @@ curl ifconfig.me
 
 # Проверить правила iptables
 sudo iptables -t nat -L -n -v
+```
+
+**Для режима VPN-клиента (VM):**
+
+```bash
+# Проверить статус Xray
+systemctl status xray
+
+# Посмотреть логи и диагностику (через меню скрипта)
+sudo bash setup_final_bash.sh
+# Выбрать пункт 8 "Просмотр логов и диагностика"
+
+# Проверить внешний IP через SOCKS5 (должен показать IP VPN-сервера)
+curl --socks5 127.0.0.1:1080 https://api.ipify.org
+
+# Проверить через HTTP proxy
+curl -x http://127.0.0.1:1081 https://api.ipify.org
+
+# Проверить с глобальными переменными окружения
+export http_proxy=http://127.0.0.1:1081
+curl https://api.ipify.org
 ```
 
 ## 🏗️ Архитектура проекта
@@ -254,6 +329,8 @@ pgXrayServer/
 ### Основные компоненты
 
 #### 1. Xray Core
+
+**Режим VPN-роутера:**
 - **Протокол:** VLESS Reality
 - **Inbounds:**
   - Transparent proxy (порт 12345)
@@ -264,6 +341,16 @@ pgXrayServer/
   - block (блокировка)
   - dns-out (DNS)
 
+**Режим VPN-клиента (VM):**
+- **Протокол:** VLESS Reality с flow (xtls-rprx-vision)
+- **Inbounds:**
+  - SOCKS5 proxy (порт 1080, 127.0.0.1)
+  - HTTP proxy (порт 1081, 127.0.0.1)
+- **Outbounds:**
+  - vless-reality (VPN с поддержкой flow)
+  - direct (прямое соединение)
+  - block (блокировка)
+
 #### 2. Сетевая конфигурация
 - **Для роутера:**
   - LAN IP: 192.168.100.1/24 (по умолчанию)
@@ -271,9 +358,9 @@ pgXrayServer/
   - NAT masquerading
 
 - **Для VM:**
-  - Локальное прослушивание (127.0.0.1)
-  - OUTPUT chain iptables
-  - Исключение локальных сетей
+  - SOCKS5/HTTP прокси на localhost (127.0.0.1)
+  - Без iptables правил (работа через proxy)
+  - DNS через статический /etc/resolv.conf (1.1.1.1, 8.8.8.8)
 
 #### 3. iptables правила
 
@@ -287,20 +374,29 @@ POSTROUTING -o WAN → MASQUERADE
 
 **Режим VM:**
 ```bash
-# Перехват исходящего трафика
-OUTPUT -p tcp → XRAY chain → REDIRECT --to-port 12345
-OUTPUT -p tcp/udp --dport 53 → REDIRECT --to-port 53
-# Исключение: трафик пользователя xray (предотвращение петли)
+# Не используются iptables правила
+# Вместо этого приложения подключаются через SOCKS5/HTTP proxy
+# Настройка через переменные окружения:
+export http_proxy=http://127.0.0.1:1081
+export https_proxy=http://127.0.0.1:1081
+export all_proxy=socks5://127.0.0.1:1080
 ```
 
 ### Конфигурационные файлы
 
-После установки создаются/изменяются:
+**Режим VPN-роутера:**
 - `/usr/local/etc/xray/config.json` — конфигурация Xray
-- `/etc/netplan/*.yaml` — сетевая конфигурация (только для роутера)
+- `/etc/netplan/*.yaml` — сетевая конфигурация
 - `/etc/dhcp/dhcpd.conf` — DHCP сервер (опционально)
 - `/etc/ssh/sshd_config` — SSH сервер (если настроен)
 - `/etc/sysctl.conf` — параметры ядра
+- Правила iptables (сохранены через netfilter-persistent)
+
+**Режим VPN-клиента (VM):**
+- `/usr/local/etc/xray/config.json` — конфигурация Xray (SOCKS5 режим)
+- `/etc/resolv.conf` — статический DNS (защищен через chattr +i)
+- `/etc/needrestart/conf.d/50local.conf` — автоматический режим для needrestart
+- Службы: `systemd-resolved` отключена
 
 ## 🔧 Устранение неполадок
 
@@ -317,7 +413,7 @@ journalctl -u xray -n 50
 cat vless_link.txt
 ```
 
-### VPN не работает
+### VPN не работает (режим роутера)
 
 ```bash
 # Проверить правила iptables
@@ -328,9 +424,27 @@ ip route show
 
 # Проверить DNS
 nslookup google.com
+```
 
-# Для VM: убедиться что пользователь xray существует
-id xray
+### SOCKS5 прокси не работает (режим VM)
+
+```bash
+# Проверить что Xray запущен и слушает порты
+systemctl status xray
+ss -tulpn | grep xray
+
+# Проверить логи
+journalctl -u xray -n 50
+
+# Использовать встроенную диагностику
+sudo bash setup_final_bash.sh
+# Выбрать пункт 8 "Просмотр логов и диагностика"
+
+# Тестовая проверка прокси
+curl --socks5 127.0.0.1:1080 https://api.ipify.org
+
+# Проверить DNS
+cat /etc/resolv.conf  # должен содержать 1.1.1.1 и 8.8.8.8
 ```
 
 ### Нет интернета после установки (режим роутера)
