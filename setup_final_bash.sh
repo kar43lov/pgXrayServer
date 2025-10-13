@@ -291,6 +291,14 @@ install_dependencies() {
 install_dependencies_minimal() {
     print_header "Установка минимальных зависимостей для VM"
     echo -e "${YELLOW}Устанавливаем только необходимые пакеты для работы VPN-туннеля...${NC}"
+
+    # Отключаем интерактивные запросы
+    export DEBIAN_FRONTEND=noninteractive
+    export NEEDRESTART_MODE=a
+
+    # Настраиваем needrestart для автоматического режима
+    echo "\$nrconf{restart} = 'a';" > /etc/needrestart/conf.d/50local.conf
+
     apt-get update >/dev/null
     echo iptables-persistent iptables-persistent/autosave_v4 boolean true | debconf-set-selections
     echo iptables-persistent iptables-persistent/autosave_v6 boolean true | debconf-set-selections
