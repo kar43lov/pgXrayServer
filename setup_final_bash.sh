@@ -481,14 +481,15 @@ generate_xray_config_vm() {
         exit 1
     fi
 
-    # --- Генерируем config.json для VM (localhost только) ---
-    echo "Создаем конфигурацию Xray для локального VPN-туннеля...";
+    # --- Генерируем config.json для VM (SOCKS5 режим, БЕЗ flow для совместимости) ---
+    echo "Создаем конфигурацию Xray для локального VPN-туннеля (SOCKS5)...";
     mkdir -p /usr/local/etc/xray
     cat <<EOF > /usr/local/etc/xray/config.json
-{"log":{"loglevel":"warning"},"inbounds":[{"listen":"127.0.0.1","port":12345,"protocol":"dokodemo-door","settings":{"network":"tcp,udp","followRedirect":true},"sniffing":{"enabled":true,"destOverride":["http","tls","quic","fakedns"]},"tag":"tproxy-in"}],"outbounds":[{"protocol":"vless","tag":"vless-reality","settings":{"vnext":[{"address":"$VLESS_HOST","port":$VLESS_PORT,"users":[{"id":"$VLESS_ID","flow":"$VLESS_FLOW","encryption":"none"}]}]},"streamSettings":{"network":"tcp","security":"reality","realitySettings":{"fingerprint":"$VLESS_FP","serverName":"$VLESS_SNI","publicKey":"$VLESS_PBK","shortId":"$VLESS_SID","spiderX":"$VLESS_SPX"}}},{"protocol":"freedom","tag":"direct"},{"protocol":"blackhole","tag":"block"}],"routing":{"domainStrategy":"IPIfNonMatch","rules":[{"inboundTag":["tproxy-in"],"outboundTag":"block","type":"field","network":"udp","port":"135, 137, 138, 139"},{"inboundTag":["tproxy-in"],"outboundTag":"block","type":"field","domain":["appcenter.ms"]},{"inboundTag":["tproxy-in"],"outboundTag":"direct","type":"field","network":"udp","port":"4004","ip":["94.79.52.202"]},{"inboundTag":["tproxy-in"],"outboundTag":"direct","type":"field","domain":["vpn.iac.mchs.ru","regexp:^([a-zA-Z0-9_.-]+\\\\.)ru$","regexp:^([a-zA-Z0-9_.-]+\\\\.)su$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--p1ai$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--p1acf$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--80asehdb$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--c1avg$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--80aswg$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--80adxhks$","regexp:^([a-zA-Z0-9_.-]+\\\\.)moscow$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--d1acj3b$"]},{"inboundTag":["tproxy-in"],"outboundTag":"direct","type":"field","protocol":["bittorrent"]},{"inboundTag":["tproxy-in"],"outboundTag":"vless-reality","type":"field"}]},"dns":{"servers":["1.1.1.1","8.8.8.8"],"queryStrategy":"UseIPv4"}}
+{"log":{"loglevel":"warning"},"inbounds":[{"listen":"127.0.0.1","port":1080,"protocol":"socks","settings":{"udp":true},"sniffing":{"enabled":true,"destOverride":["http","tls","quic"]},"tag":"socks-in"},{"listen":"127.0.0.1","port":1081,"protocol":"http","sniffing":{"enabled":true,"destOverride":["http","tls","quic"]},"tag":"http-in"}],"outbounds":[{"protocol":"vless","tag":"vless-reality","settings":{"vnext":[{"address":"$VLESS_HOST","port":$VLESS_PORT,"users":[{"id":"$VLESS_ID","encryption":"none"}]}]},"streamSettings":{"network":"tcp","security":"reality","realitySettings":{"fingerprint":"$VLESS_FP","serverName":"$VLESS_SNI","publicKey":"$VLESS_PBK","shortId":"$VLESS_SID","spiderX":"$VLESS_SPX"}}},{"protocol":"freedom","tag":"direct"},{"protocol":"blackhole","tag":"block"}],"routing":{"domainStrategy":"IPIfNonMatch","rules":[{"outboundTag":"block","type":"field","network":"udp","port":"135, 137, 138, 139"},{"outboundTag":"block","type":"field","domain":["appcenter.ms"]},{"outboundTag":"direct","type":"field","network":"udp","port":"4004","ip":["94.79.52.202"]},{"outboundTag":"direct","type":"field","domain":["vpn.iac.mchs.ru","regexp:^([a-zA-Z0-9_.-]+\\\\.)ru$","regexp:^([a-zA-Z0-9_.-]+\\\\.)su$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--p1ai$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--p1acf$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--80asehdb$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--c1avg$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--80aswg$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--80adxhks$","regexp:^([a-zA-Z0-9_.-]+\\\\.)moscow$","regexp:^([a-zA-Z0-9_.-]+\\\\.)xn--d1acj3b$"]},{"outboundTag":"direct","type":"field","protocol":["bittorrent"]},{"outboundTag":"vless-reality","type":"field"}]},"dns":{"servers":["1.1.1.1","8.8.8.8"],"queryStrategy":"UseIPv4"}}
 
 EOF
-    echo -e "${GREEN}Конфигурация Xray для VM создана.${NC}"
+    echo -e "${GREEN}Конфигурация Xray для VM создана (SOCKS5: 1080, HTTP: 1081).${NC}"
+    echo -e "${YELLOW}ВНИМАНИЕ: Используйте SOCKS5 proxy для приложений: 127.0.0.1:1080${NC}"
 }
 
 setup_xray() {
@@ -677,8 +678,8 @@ simple_vm_install() {
     # Этап 5: Генерация конфигурации для VM
     generate_xray_config_vm
 
-    # Этап 6: Настройка файрвола для VM
-    setup_firewall_vm
+    # Этап 6: Пропускаем файрвол (SOCKS5 режим не требует iptables)
+    echo "Пропускаем настройку файрвола (используется SOCKS5 режим)..."
 
     # Этап 7: Настройка DNS
     print_header "Настройка DNS"
@@ -714,13 +715,13 @@ EOF
     sleep 3
     if systemctl is-active --quiet xray; then
         print_header "Упрощенная установка завершена!"
-        echo -e "${GREEN}Xray VPN успешно установлен и настроен для VM.${NC}"
+        echo -e "${GREEN}Xray VPN успешно установлен и настроен для VM (SOCKS5 режим).${NC}"
         echo ""
         echo -e "${YELLOW}Что было настроено:${NC}"
-        echo "  - Установлен Xray VPN прокси"
-        echo "  - Настроена конфигурация VLESS Reality"
-        echo "  - Весь исходящий TCP трафик перенаправлен через VPN"
-        echo "  - DNS запросы перенаправлены через VPN"
+        echo "  - Установлен Xray VPN прокси (SOCKS5)"
+        echo "  - Настроена конфигурация VLESS Reality БЕЗ flow"
+        echo "  - SOCKS5 proxy: 127.0.0.1:1080"
+        echo "  - HTTP proxy: 127.0.0.1:1081"
         echo ""
         echo -e "${YELLOW}Как работает маршрутизация:${NC}"
         echo "  - Российские домены (.ru, .su, .рф) → напрямую"
@@ -728,12 +729,18 @@ EOF
         echo "  - BitTorrent → напрямую"
         echo "  - Остальной трафик → через VPN"
         echo ""
-        echo -e "${YELLOW}Для проверки работы:${NC}"
-        echo "  - Проверить статус: systemctl status xray"
-        echo "  - Посмотреть логи: journalctl -u xray -f"
-        echo "  - Проверить IP: curl ifconfig.me"
+        echo -e "${YELLOW}Примеры использования:${NC}"
+        echo "  - curl: curl --socks5 127.0.0.1:1080 https://api.ipify.org"
+        echo "  - wget: wget -e use_proxy=yes -e http_proxy=127.0.0.1:1081 https://example.com"
+        echo "  - git: git config --global http.proxy http://127.0.0.1:1081"
+        echo "  - export: export http_proxy=http://127.0.0.1:1081 https_proxy=http://127.0.0.1:1081"
         echo ""
-        echo -e "${GREEN}VPN-туннель активен и работает!${NC}"
+        echo -e "${YELLOW}Проверка:${NC}"
+        echo "  - Статус: systemctl status xray"
+        echo "  - Логи: journalctl -u xray -f"
+        echo "  - IP через VPN: curl --socks5 127.0.0.1:1080 https://api.ipify.org"
+        echo ""
+        echo -e "${GREEN}VPN-прокси активен и готов к использованию!${NC}"
     else
         echo -e "${RED}Ошибка: Не удалось запустить Xray. Проверьте логи: journalctl -u xray${NC}"
         echo ""
